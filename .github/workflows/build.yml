@@ -1,0 +1,79 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+
+      - name: Scaffold platform folders (android/ios) if missing
+        run: |
+          if [ ! -d "android" ]; then
+            flutter create --org com.taskgrade --project-name taskgrade .
+          fi
+
+      - name: Apply Android manifest permissions
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          python3 - "$MANIFEST" << 'EOF'
+          import sys, re
+          path = sys.argv[1]
+          with open(path) as f:
+              content = f.read()
+
+          permissions = '''    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+              <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+              <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+              <uses-permission android:name="android.permission.WAKE_LOCK"/>
+          '''
+          if 'SCHEDULE_EXACT_ALARM' not in content:
+              content = content.replace('<manifest', permissions + '<manifest', 1) \
+                  if False else re.sub(r'(<manifest[^>]*>)', r'\1\n' + permissions, content, count=1)
+
+          receivers = '''    <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+                  <intent-filter>
+                      <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                      <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                      <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+                  </intent-filter>
+              </receiver>
+              <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"/>
+          '''
+          if 'ScheduledNotificationBootReceiver' not in content:
+              content = content.replace('</application>', receivers + '</application>', 1)
+
+          with open(path, 'w') as f:
+              f.write(content)
+          print("Manifest patched.")
+          EOF
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskgrade-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
