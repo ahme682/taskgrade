@@ -1,0 +1,76 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../models/task_model.dart';
+import '../services/notification_service.dart';
+
+class TaskProvider extends ChangeNotifier {
+  static const String _storageKey = 'tasks_v1';
+
+  final List<TaskModel> _tasks = [];
+
+  List<TaskModel> get tasks {
+    final sorted = [..._tasks];
+    sorted.sort((a, b) => a.dueAt.compareTo(b.dueAt));
+    return sorted;
+  }
+
+  List<TaskModel> get pendingTasks =>
+      tasks.where((t) => !t.isCompleted).toList();
+
+  List<TaskModel> get completedTasks =>
+      tasks.where((t) => t.isCompleted).toList();
+
+  Future<void> loadTasks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_storageKey);
+    if (raw != null) {
+      final List<dynamic> decoded = jsonDecode(raw) as List<dynamic>;
+      _tasks
+        ..clear()
+        ..addAll(decoded.map((e) => TaskModel.fromJson(e as Map<String, dynamic>)));
+      notifyListeners();
+    }
+  }
+
+  Future<void> _persist() async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = jsonEncode(_tasks.map((t) => t.toJson()).toList());
+    await prefs.setString(_storageKey, encoded);
+  }
+
+  Future<void> addTask(TaskModel task) async {
+    _tasks.add(task);
+    notifyListeners();
+    await _persist();
+    await NotificationService.instance.scheduleReminder(task);
+  }
+
+  Future<void> updateTask(TaskModel updated) async {
+    final index = _tasks.indexWhere((t) => t.id == updated.id);
+    if (index == -1) return;
+    _tasks[index] = updated;
+    notifyListeners();
+    await _persist();
+    await NotificationService.instance.scheduleReminder(updated);
+  }
+
+  Future<void> toggleComplete(TaskModel task) async {
+    task.isCompleted = !task.isCompleted;
+    notifyListeners();
+    await _persist();
+    if (task.isCompleted) {
+      await NotificationService.instance.cancelReminder(task);
+    } else {
+      await NotificationService.instance.scheduleReminder(task);
+    }
+  }
+
+  Future<void> deleteTask(TaskModel task) async {
+    _tasks.removeWhere((t) => t.id == task.id);
+    notifyListeners();
+    await _persist();
+    await NotificationService.instance.cancelReminder(task);
+  }
+}
