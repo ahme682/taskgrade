@@ -1,0 +1,180 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+
+import '../models/task_model.dart';
+
+/// Bottom sheet with the task-name field, description field, and the
+/// schedule/deadline time picker — the two "Main Dashboard UI" inputs
+/// requested: task field + time field.
+class AddTaskSheet extends StatefulWidget {
+  final TaskModel? existing;
+  final void Function(TaskModel task) onSave;
+
+  const AddTaskSheet({super.key, this.existing, required this.onSave});
+
+  @override
+  State<AddTaskSheet> createState() => _AddTaskSheetState();
+}
+
+class _AddTaskSheetState extends State<AddTaskSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _titleController;
+  late final TextEditingController _descController;
+  DateTime _dueAt = DateTime.now().add(const Duration(hours: 1));
+  TaskGrade _grade = TaskGrade.B;
+
+  @override
+  void initState() {
+    super.initState();
+    final t = widget.existing;
+    _titleController = TextEditingController(text: t?.title ?? '');
+    _descController = TextEditingController(text: t?.description ?? '');
+    if (t != null) {
+      _dueAt = t.dueAt;
+      _grade = t.grade;
+    }
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDateTime() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _dueAt,
+      firstDate: DateTime.now().subtract(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+    );
+    if (date == null || !mounted) return;
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_dueAt),
+    );
+    if (time == null) return;
+
+    setState(() {
+      _dueAt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    });
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) return;
+
+    final task = TaskModel(
+      id: widget.existing?.id,
+      notificationId: widget.existing?.notificationId,
+      title: _titleController.text.trim(),
+      description: _descController.text.trim(),
+      dueAt: _dueAt,
+      grade: _grade,
+      isCompleted: widget.existing?.isCompleted ?? false,
+    );
+    widget.onSave(task);
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dateFormat = DateFormat('EEE, MMM d · h:mm a');
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: theme.dividerColor,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+            Text(
+              widget.existing == null ? 'New Task' : 'Edit Task',
+              style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 20),
+
+            // --- Task input/field ---
+            TextFormField(
+              controller: _titleController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Task',
+                hintText: 'e.g. Submit design proposal',
+                border: OutlineInputBorder(),
+              ),
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Please enter a task name' : null,
+            ),
+            const SizedBox(height: 14),
+
+            TextFormField(
+              controller: _descController,
+              minLines: 1,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Description (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // --- Time input/field (schedule/deadline) ---
+            InkWell(
+              onTap: _pickDateTime,
+              borderRadius: BorderRadius.circular(8),
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Due date & time',
+                  border: OutlineInputBorder(),
+                  suffixIcon: Icon(Icons.schedule),
+                ),
+                child: Text(dateFormat.format(_dueAt)),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Grade / priority selector
+            DropdownButtonFormField<TaskGrade>(
+              initialValue: _grade,
+              decoration: const InputDecoration(
+                labelText: 'Grade / Priority',
+                border: OutlineInputBorder(),
+              ),
+              items: TaskGrade.values
+                  .map((g) => DropdownMenuItem(value: g, child: Text(g.label)))
+                  .toList(),
+              onChanged: (g) => setState(() => _grade = g ?? _grade),
+            ),
+            const SizedBox(height: 22),
+
+            FilledButton(
+              onPressed: _submit,
+              style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+              child: Text(widget.existing == null ? 'Add Task' : 'Save Changes'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
