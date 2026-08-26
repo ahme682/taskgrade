@@ -1,0 +1,66 @@
+import 'package:uuid/uuid.dart';
+
+enum TaskGrade { A, B, C }
+
+extension TaskGradeX on TaskGrade {
+  String get label => switch (this) {
+        TaskGrade.A => 'A · Critical',
+        TaskGrade.B => 'B · Important',
+        TaskGrade.C => 'C · Low priority',
+      };
+
+  // Used for color-coding in the UI.
+  int get colorValue => switch (this) {
+        TaskGrade.A => 0xFFE5484D, // red
+        TaskGrade.B => 0xFFF5A623, // amber
+        TaskGrade.C => 0xFF30A46C, // green
+      };
+}
+
+class TaskModel {
+  final String id;
+  String title;
+  String description;
+  DateTime dueAt;
+  TaskGrade grade;
+  bool isCompleted;
+
+  /// The id used to schedule/cancel the "15 minutes before" notification
+  /// for this task. Kept stable across edits.
+  final int notificationId;
+
+  TaskModel({
+    String? id,
+    required this.title,
+    this.description = '',
+    required this.dueAt,
+    this.grade = TaskGrade.B,
+    this.isCompleted = false,
+    int? notificationId,
+  })  : id = id ?? const Uuid().v4(),
+        notificationId = notificationId ?? DateTime.now().millisecondsSinceEpoch.remainder(100000);
+
+  DateTime get reminderAt => dueAt.subtract(const Duration(minutes: 15));
+
+  bool get reminderAlreadyPassed => reminderAt.isBefore(DateTime.now());
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'description': description,
+        'dueAt': dueAt.toIso8601String(),
+        'grade': grade.name,
+        'isCompleted': isCompleted,
+        'notificationId': notificationId,
+      };
+
+  factory TaskModel.fromJson(Map<String, dynamic> json) => TaskModel(
+        id: json['id'] as String,
+        title: json['title'] as String,
+        description: json['description'] as String? ?? '',
+        dueAt: DateTime.parse(json['dueAt'] as String),
+        grade: TaskGrade.values.byName(json['grade'] as String? ?? 'B'),
+        isCompleted: json['isCompleted'] as bool? ?? false,
+        notificationId: json['notificationId'] as int,
+      );
+}
