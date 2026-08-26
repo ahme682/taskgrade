@@ -1,0 +1,142 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../models/task_model.dart';
+import '../providers/task_provider.dart';
+import '../widgets/add_task_dialog.dart';
+import '../widgets/task_tile.dart';
+
+class DashboardScreen extends StatefulWidget {
+  const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Load persisted tasks and (re)schedule their reminders on launch.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<TaskProvider>().loadTasks();
+    });
+  }
+
+  void _openTaskSheet({TaskModel? existing}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => AddTaskSheet(
+        existing: existing,
+        onSave: (task) {
+          final provider = context.read<TaskProvider>();
+          if (existing == null) {
+            provider.addTask(task);
+          } else {
+            provider.updateTask(task);
+          }
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<TaskProvider>();
+    final pending = provider.pendingTasks;
+    final completed = provider.completedTasks;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('TaskGrade', style: TextStyle(fontWeight: FontWeight.bold)),
+        centerTitle: false,
+      ),
+      body: pending.isEmpty && completed.isEmpty
+          ? _EmptyState(onAdd: () => _openTaskSheet())
+          : ListView(
+              padding: const EdgeInsets.only(top: 8, bottom: 100),
+              children: [
+                if (pending.isNotEmpty) ...[
+                  _SectionHeader(title: 'Upcoming (${pending.length})'),
+                  ...pending.map(
+                    (task) => TaskTile(
+                      task: task,
+                      onToggle: () => provider.toggleComplete(task),
+                      onTap: () => _openTaskSheet(existing: task),
+                      onDelete: () => provider.deleteTask(task),
+                    ),
+                  ),
+                ],
+                if (completed.isNotEmpty) ...[
+                  _SectionHeader(title: 'Completed (${completed.length})'),
+                  ...completed.map(
+                    (task) => TaskTile(
+                      task: task,
+                      onToggle: () => provider.toggleComplete(task),
+                      onTap: () => _openTaskSheet(existing: task),
+                      onDelete: () => provider.deleteTask(task),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _openTaskSheet(),
+        icon: const Icon(Icons.add),
+        label: const Text('New Task'),
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  const _SectionHeader({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
+      child: Text(
+        title,
+        style: Theme.of(context)
+            .textTheme
+            .labelLarge
+            ?.copyWith(color: Theme.of(context).hintColor, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  final VoidCallback onAdd;
+  const _EmptyState({required this.onAdd});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.task_alt, size: 64, color: theme.hintColor),
+          const SizedBox(height: 12),
+          Text('No tasks yet', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 6),
+          Text('Add one and get a reminder 15 minutes before it\'s due.',
+              style: theme.textTheme.bodySmall, textAlign: TextAlign.center),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: onAdd,
+            icon: const Icon(Icons.add),
+            label: const Text('Add your first task'),
+          ),
+        ],
+      ),
+    );
+  }
+}
