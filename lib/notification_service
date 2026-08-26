@@ -1,0 +1,126 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:timezone/timezone.dart' as tz;
+import 'package:timezone/data/latest_all.dart' as tz_data;
+
+import '../models/task_model.dart';
+
+/// Wraps flutter_local_notifications and owns all scheduling logic.
+///
+/// Core feature: schedules a local notification exactly 15 minutes before
+/// a task's due time, with a dynamic message that includes the task name.
+class NotificationService {
+  NotificationService._internal();
+  static final NotificationService instance = NotificationService._internal();
+
+  final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  bool _initialized = false;
+
+  static const String _channelId = 'task_reminders';
+  static const String _channelName = 'Task Reminders';
+  static const String _channelDescription = 'Alerts sent 15 minutes before a task is due';
+
+  Future<void> init() async {
+    if (_initialized) return;
+
+    // Set up timezone database so scheduled times are correct regardless
+    // of device locale/DST — critical for "exactly 15 minutes before".
+    tz_data.initializeTimeZones();
+    final String localTimeZone = await FlutterTimezone.getLocalTimezone();
+    tz.setLocalLocation(tz.getLocation(localTimeZone));
+
+    const AndroidInitializationSettings androidInit =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    const DarwinInitializationSettings iosInit = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
+
+    const InitializationSettings initSettings = InitializationSettings(
+      android: androidInit,
+      iOS: iosInit,
+    );
+
+    await _plugin.initialize(initSettings);
+
+    // Android 13+ requires runtime notification permission.
+    await _plugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestNotificationsPermission();
+
+    // Android 12+ requires this for exact-time alarms.
+    await _plugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestExactAlarmsPermission();
+
+    await _plugin
+        .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin>()
+        ?.requestPermissions(alert: true, badge: true, sound: true);
+
+    _initialized = true;
+  }
+
+  /// Schedules (or reschedules) the "15 minutes before" reminder for [task].
+  /// If the reminder time has already passed, nothing is scheduled.
+  Future<void> scheduleReminder(TaskModel task) async {
+    await init();
+
+    // Always clear any existing notification for this task first, so
+    // editing a task's time doesn't leave a stale duplicate reminder.
+    await cancelReminder(task);
+
+    if (task.reminderAlreadyPassed || task.isCompleted) return;
+
+    final tz.TZDateTime scheduledDate = tz.TZDateTime.from(task.reminderAt, tz.local);
+
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDescription,
+      importance: Importance.max,
+      priority: Priority.high,
+      category: AndroidNotificationCategory.reminder,
+    );
+
+    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    const NotificationDetails details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    // The dynamic message: "Reminder: Only 15 minutes left for your task: [Task Name]"
+    final String body = 'Only 15 minutes left for your task: ${task.title}';
+
+    await _plugin.zonedSchedule(
+      task.notificationId,
+      'Reminder',
+      body,
+      scheduledDate,
+      details,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+
+    if (kDebugMode) {
+      debugPrint('Scheduled reminder for "${task.title}" at $scheduledDate');
+    }
+  }
+
+  Future<void> cancelReminder(TaskModel task) async {
+    await _plugin.cancel(task.notificationId);
+  }
+
+  Future<void> cancelAll() => _plugin.cancelAll();
+}
