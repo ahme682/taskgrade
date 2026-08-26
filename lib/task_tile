@@ -1,0 +1,125 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+
+import '../models/task_model.dart';
+
+class TaskTile extends StatelessWidget {
+  final TaskModel task;
+  final VoidCallback onToggle;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+
+  const TaskTile({
+    super.key,
+    required this.task,
+    required this.onToggle,
+    required this.onTap,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final gradeColor = Color(task.grade.colorValue);
+    final timeFormat = DateFormat('MMM d, h:mm a');
+    final isOverdue = !task.isCompleted && task.dueAt.isBefore(DateTime.now());
+
+    return Dismissible(
+      key: ValueKey(task.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.errorContainer,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Icon(Icons.delete_outline, color: theme.colorScheme.onErrorContainer),
+      ),
+      onDismissed: (_) => onDelete(),
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: theme.dividerColor.withValues(alpha: 0.4)),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Checkbox(
+                  value: task.isCompleted,
+                  onChanged: (_) => onToggle(),
+                  shape: const CircleBorder(),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        task.title,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          decoration: task.isCompleted ? TextDecoration.lineThrough : null,
+                          color: task.isCompleted
+                              ? theme.disabledColor
+                              : theme.textTheme.titleMedium?.color,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (task.description.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          task.description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.access_time,
+                              size: 14,
+                              color: isOverdue ? theme.colorScheme.error : theme.hintColor),
+                          const SizedBox(width: 4),
+                          Text(
+                            timeFormat.format(task.dueAt),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: isOverdue ? theme.colorScheme.error : theme.hintColor,
+                              fontWeight: isOverdue ? FontWeight.bold : null,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: gradeColor.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              task.grade.name,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: gradeColor,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
